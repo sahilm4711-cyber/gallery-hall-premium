@@ -4,10 +4,11 @@
 const KEY = 'gallery-hall-premium-v1';
 const DEFAULTS = {
   a: '', b: '', dedication: 'Every wall here is a memory. Every memory is you.',
-  date: '', theme: 'gold', photos: [], passcode: null
+  date: '', theme: 'gold', photos: [], passcode: null,
+  avatar: { skin: '#e8c39a', hair: 'short', hairColor: '#2b2118', top: '#222222', trousers: '#e8ddc9' }
 };
 let state = load();
-let scene, camera, renderer, galleryGroup, partnerMesh, partnerLabel;
+let scene, camera, renderer, galleryGroup, partnerMesh, playerMesh;
 let player = { x: 0, z: 7, yaw: Math.PI, pitch: 0 }; // facing north (-z)
 let keys = {}, sitting = false, firstPerson = false, targetWalk = null;
 let frameMeshes = [], benchMeshes = [], plaqueMesh = null, screenMesh = null;
@@ -65,6 +66,11 @@ function refreshSettingsUI() {
   $('in-a').value = state.a; $('in-b').value = state.b;
   $('in-dedication').value = state.dedication; $('in-date').value = state.date || '';
   $('in-theme').value = state.theme;
+  const av = Object.assign({}, DEFAULTS.avatar, state.avatar || {});
+  state.avatar = av;
+  $('in-skin').value = av.skin; $('in-hair').value = av.hair;
+  $('in-haircolor').value = av.hairColor; $('in-top').value = av.top;
+  $('in-trousers').value = av.trousers;
   document.body.dataset.theme = state.theme;
   $('brand-names').textContent = names();
   $('hud-title').textContent = (state.a && state.b)
@@ -99,9 +105,14 @@ function bindSettings() {
   const sync = () => {
     state.a = $('in-a').value; state.b = $('in-b').value;
     state.dedication = $('in-dedication').value; state.date = $('in-date').value;
-    state.theme = $('in-theme').value; save(); refreshSettingsUI(); buildGallery();
+    state.theme = $('in-theme').value;
+    state.avatar = {
+      skin: $('in-skin').value, hair: $('in-hair').value, hairColor: $('in-haircolor').value,
+      top: $('in-top').value, trousers: $('in-trousers').value
+    };
+    save(); refreshSettingsUI(); buildGallery();
   };
-  ['in-a', 'in-b', 'in-dedication', 'in-date', 'in-theme'].forEach(id => $(id).addEventListener('input', sync));
+  ['in-a', 'in-b', 'in-dedication', 'in-date', 'in-theme', 'in-skin', 'in-hair', 'in-haircolor', 'in-top', 'in-trousers'].forEach(id => $(id).addEventListener('input', sync));
   $('photo-upload').addEventListener('change', e => {
     const files = Array.from(e.target.files || []).slice(0, 12 - state.photos.length);
     if (!files.length) return toast('Photo limit reached (12). Remove one first.');
@@ -186,15 +197,15 @@ function toggleMusic() {
   } catch (e) { toast('Audio is not available in this browser.'); }
 }
 
-// ---------- 3D museum ----------
+// ---------- 3D museum (Giftvera "Our Museum" style: bright white-box, black ceiling) ----------
 function placeholderTexture(title, caption) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 384;
   const x = c.getContext('2d');
-  const g = x.createLinearGradient(0, 0, 512, 384); g.addColorStop(0, '#2b2118'); g.addColorStop(1, '#0e0b08');
-  x.fillStyle = g; x.fillRect(0, 0, 512, 384);
-  x.fillStyle = '#c9a227'; x.font = '90px serif'; x.textAlign = 'center'; x.fillText('♥', 256, 150);
-  x.fillStyle = '#f3e5ab'; x.font = 'bold 30px system-ui'; x.fillText(title, 256, 220, 460);
-  x.fillStyle = '#cbb98a'; x.font = '20px system-ui'; x.fillText(caption || 'A memory, beautifully framed.', 256, 260, 460);
+  x.fillStyle = '#f5f3ee'; x.fillRect(0, 0, 512, 384);
+  x.strokeStyle = '#111'; x.lineWidth = 6; x.strokeRect(14, 14, 484, 356);
+  x.fillStyle = '#111'; x.font = '72px serif'; x.textAlign = 'center'; x.fillText('♥', 256, 140);
+  x.fillStyle = '#222'; x.font = 'bold 30px system-ui'; x.fillText(title, 256, 210, 460);
+  x.fillStyle = '#666'; x.font = '20px system-ui'; x.fillText(caption || 'A memory, beautifully framed.', 256, 250, 460);
   return new THREE.CanvasTexture(c);
 }
 function frameTexture(photo, title, caption) {
@@ -205,31 +216,79 @@ function frameTexture(photo, title, caption) {
 }
 function makeFrame(slot, w, h, x, y, z, ry, title, caption, photo) {
   const group = new THREE.Group(); group.position.set(x, y, z); group.rotation.y = ry;
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.18, h + 0.18, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.6, roughness: 0.35 }));
+  // Thin black frame + white mat, Giftvera style
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.14, h + 0.14, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 }));
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.08, h + 0.08),
+    new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  mat.position.z = 0.045;
   const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
     new THREE.MeshBasicMaterial({ map: frameTexture(photo, title, caption) }));
-  art.position.z = 0.07; art.userData = { kind: 'photo', title, caption, photo };
-  const spot = new THREE.SpotLight(0xffe9a8, 0.9, 12, 0.6, 0.5); spot.position.set(0, 2.5, 1.5); spot.target = art;
-  group.add(frame, art, spot, spot.target);
+  art.position.z = 0.06; art.userData = { kind: 'photo', title, caption, photo };
+  const spot = new THREE.SpotLight(0xffffff, 0.9, 12, 0.6, 0.5); spot.position.set(0, 2.5, 1.5); spot.target = art;
+  group.add(frame, mat, art, spot, spot.target);
   frameMeshes.push(art);
   return group;
 }
 function makeBench(x, z, ry) {
+  // Low light-wood bench with black legs, no back — the film-area bench
   const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry;
-  const wood = new THREE.MeshStandardMaterial({ color: 0x7a4a22, roughness: 0.8 });
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.18, 0.7), wood); seat.position.y = 0.55;
-  const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.8, 0.12), wood); back.position.set(0, 1.0, -0.32);
-  seat.userData = { kind: 'bench' }; back.userData = { kind: 'bench' };
-  benchMeshes.push(seat, back); g.add(seat, back); return g;
+  const wood = new THREE.MeshStandardMaterial({ color: 0xd9c49a, roughness: 0.7 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.14, 0.7), wood); seat.position.y = 0.5;
+  seat.userData = { kind: 'bench' };
+  benchMeshes.push(seat); g.add(seat);
+  [-1.05, 1.05].forEach(dx => [-0.25, 0.25].forEach(dz => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.5, 0.09), dark);
+    leg.position.set(dx, 0.25, dz); g.add(leg);
+  }));
+  return g;
 }
-function makePerson(color) {
+function makeNameSprite(text) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(0,0,0,0.65)';
+  x.fillRect(28, 8, 200, 48);
+  x.fillStyle = '#fff'; x.font = 'bold 26px system-ui'; x.textAlign = 'center'; x.fillText(text, 128, 42);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
+  sp.scale.set(1.7, 0.42, 1); sp.position.y = 2.25;
+  return sp;
+}
+// Simple doll-like third-person avatar, Giftvera style: head, hair, top, trousers, shoes
+function makeAvatar(av, name) {
   const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 20), new THREE.MeshStandardMaterial({ color: 0xe8c39a }));
-  head.position.y = 1.55;
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 1.0, 16), mat); body.position.y = 0.85;
-  g.add(head, body); return g;
+  const skin = new THREE.MeshStandardMaterial({ color: new THREE.Color(av.skin) });
+  const hairM = new THREE.MeshStandardMaterial({ color: new THREE.Color(av.hairColor) });
+  const topM = new THREE.MeshStandardMaterial({ color: new THREE.Color(av.top) });
+  const trM = new THREE.MeshStandardMaterial({ color: new THREE.Color(av.trousers) });
+  const shoeM = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 20, 20), skin); head.position.y = 1.58; g.add(head);
+  if (av.hair === 'long') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.29, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM);
+    cap.position.y = 1.62; g.add(cap);
+    const fall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.55, 0.12), hairM);
+    fall.position.set(0, 1.35, -0.24); g.add(fall);
+  } else if (av.hair === 'curly') {
+    for (let i = 0; i < 7; i++) {
+      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 12), hairM);
+      const a = (i / 7) * Math.PI * 2;
+      curl.position.set(Math.cos(a) * 0.2, 1.78 + (i % 2) * 0.05, Math.sin(a) * 0.2); g.add(curl);
+    }
+  } else {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.29, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.5), hairM);
+    cap.position.y = 1.6; g.add(cap);
+  }
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.95, 16), topM); body.position.y = 0.9; g.add(body);
+  [-0.2, 0.2].forEach(dx => {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.8, 10), topM);
+    arm.position.set(dx * 2.1, 0.9, 0); g.add(arm);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.5, 10), trM);
+    leg.position.set(dx, 0.25, 0); g.add(leg);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.28), shoeM);
+    shoe.position.set(dx, 0.045, 0.04); g.add(shoe);
+  });
+  if (name) g.add(makeNameSprite(name));
+  return g;
 }
 function buildGallery() {
   if (!scene) return;
@@ -241,47 +300,70 @@ function buildGallery() {
     { title: 'A Laugh', caption: 'The kind you remember.' },
     { title: 'Together', caption: 'Side by side, always.' },
     { title: 'A Quiet Day', caption: 'Ordinary, and perfect.' },
-    { title: 'The Dedication Wall', caption: 'Every word, from the heart.' },
+    { title: 'East Gallery', caption: 'Every word, from the heart.' },
     { title: 'Adventures', caption: 'More to come.' },
     { title: 'Us', caption: names() },
-    { title: 'Forever Frame', caption: 'Still to be filled.' }
+    { title: 'West Wing', caption: 'Still to be filled.' },
+    { title: 'A Favourite', caption: 'Kept close.' },
+    { title: 'Forever Frame', caption: 'Still to be filled.' },
+    { title: 'And More', caption: 'The story continues.' }
   ];
   const photos = state.photos;
-  const cp = makeFrame('centerpiece', 3.4, 2.5, 0, 2.3, -9.85, 0, slots[0].title, slots[0].caption, photos[0]);
-  galleryGroup.add(cp);
-  // Dedication plaque under the centerpiece
+  // Centerpiece: tall freestanding black wall on a wide white platform
+  const cpWall = new THREE.Mesh(new THREE.BoxGeometry(6.5, 4.4, 0.35),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 }));
+  cpWall.position.set(0, 2.2, -6); galleryGroup.add(cpWall);
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(8, 0.25, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }));
+  platform.position.set(0, 0.125, -6); galleryGroup.add(platform);
+  galleryGroup.add(makeFrame('centerpiece', 3.2, 2.3, 0, 2.35, -5.8, 0, slots[0].title, slots[0].caption, photos[0]));
+  // Dedication plaque on a white plinth in front of the centerpiece
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.05, 0.45),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }));
+  plinth.position.set(0, 0.525, -4.3); galleryGroup.add(plinth);
   const pc = document.createElement('canvas'); pc.width = 1024; pc.height = 512; const px = pc.getContext('2d');
-  px.fillStyle = '#14100a'; px.fillRect(0, 0, 1024, 512);
-  px.fillStyle = '#c9a227'; px.textAlign = 'center';
+  px.fillStyle = '#111111'; px.fillRect(0, 0, 1024, 512);
+  px.fillStyle = '#bbbbbb'; px.textAlign = 'center';
   px.font = '28px system-ui'; px.fillText('A PERMANENT COLLECTION', 512, 90);
-  px.font = 'bold 44px serif'; px.fillStyle = '#f3e5ab'; px.fillText(state.b ? 'For ' + state.b : 'For your beloved', 512, 180);
-  px.font = '30px system-ui'; px.fillStyle = '#e8dcc0';
+  px.font = 'bold 44px serif'; px.fillStyle = '#f5f3ee'; px.fillText(state.b ? 'For ' + state.b : 'For your beloved', 512, 180);
+  px.font = '30px system-ui'; px.fillStyle = '#e8e4dc';
   const words = (state.dedication || '').match(/.{1,38}(\s|$)/g) || [''];
   words.slice(0, 4).forEach((line, i) => px.fillText(line.trim(), 512, 250 + i * 42));
-  px.fillStyle = '#c9a227'; px.font = 'italic 32px serif'; px.fillText(state.a ? 'Always yours, ' + state.a : 'Always yours', 512, 450);
-  plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.3),
+  px.fillStyle = '#f5f3ee'; px.font = 'italic 32px serif'; px.fillText(state.a ? 'Always yours, ' + state.a : 'Always yours', 512, 450);
+  plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(pc) }));
-  plaqueMesh.position.set(0, 0.9, -9.82); plaqueMesh.userData = { kind: 'plaque' };
+  plaqueMesh.position.set(0, 0.95, -4.06); plaqueMesh.userData = { kind: 'plaque' };
   galleryGroup.add(plaqueMesh);
-  // Side frames, north + south walls
+  // Side frames, single row at eye level: north wall, east + west wings
   const north = [[-13, slots[1]], [-9, slots[2]], [9, slots[3]], [13, slots[4]]];
-  const south = [[-12, slots[5]], [-6, slots[6]], [6, slots[7]], [12, slots[8]]];
-  north.forEach(([x, s], i) => galleryGroup.add(makeFrame('n' + i, 2.2, 1.6, x, 2.1, -9.85, 0, s.title, s.caption, photos[1 + i])));
-  south.forEach(([x, s], i) => galleryGroup.add(makeFrame('s' + i, 2.2, 1.6, x, 2.1, 9.85, Math.PI, s.title, s.caption, photos[5 + i])));
-  // Cinema screen (east wall) — shows dedication, cycles photos in the modal flow
+  const east = [[-1, slots[5]], [3, slots[6]], [7, slots[7]]];
+  const west = [[-7, slots[8]], [-2, slots[9]], [3, slots[10]], [8, slots[11]]];
+  north.forEach(([x, s], i) => galleryGroup.add(makeFrame('n' + i, 2.2, 1.6, x, 1.7, -9.85, 0, s.title, s.caption, photos[1 + i])));
+  east.forEach(([z, s], i) => galleryGroup.add(makeFrame('e' + i, 2.2, 1.6, 21.85, 1.7, z, -Math.PI / 2, s.title, s.caption, photos[5 + i])));
+  west.forEach(([z, s], i) => galleryGroup.add(makeFrame('w' + i, 2.2, 1.6, -21.85, 1.7, z, Math.PI / 2, s.title, s.caption, photos[8 + i])));
+  // Film screen (east wall) with a thin black frame
+  const screenFrame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.7, 4.7),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 }));
+  screenFrame.position.set(21.85, 2.4, -7); galleryGroup.add(screenFrame);
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 2.5),
     new THREE.MeshBasicMaterial({ map: placeholderTexture('Our Film', names()) }));
-  screen.position.set(21.85, 2.4, 0); screen.rotation.y = -Math.PI / 2; screen.userData = { kind: 'screen' };
+  screen.position.set(21.8, 2.4, -7); screen.rotation.y = -Math.PI / 2; screen.userData = { kind: 'screen' };
   screenMesh = screen; galleryGroup.add(screen);
-  galleryGroup.add(makeBench(-4, -4, 0), makeBench(4, -4, 0), makeBench(-4, 4, Math.PI), makeBench(4, 4, Math.PI));
+  galleryGroup.add(makeBench(20.0, -7, Math.PI / 2), makeBench(-4.5, -1.5, 0));
   // Partner avatar, standing nearby
-  partnerMesh = makePerson(0xe75480); partnerMesh.position.set(2.2, 0, 4.5); galleryGroup.add(partnerMesh);
+  partnerMesh = makeAvatar({ skin: '#e8c39a', hair: 'long', hairColor: '#1a1a1a', top: '#e8ddc9', trousers: '#222222' }, state.b || 'Partner');
+  partnerMesh.position.set(2.2, 0, 4.5); galleryGroup.add(partnerMesh);
   scene.add(galleryGroup);
+  // Your own avatar (third-person, walks with you)
+  if (playerMesh) scene.remove(playerMesh);
+  playerMesh = makeAvatar(state.avatar, myName);
+  playerMesh.position.set(player.x, 0, player.z);
+  scene.add(playerMesh);
 }
 function init3D() {
   if (typeof THREE === 'undefined') { show($('scene-error'), true); return; }
   const wrap = $('scene-wrap');
-  scene = new THREE.Scene(); scene.background = new THREE.Color(0x11101a); scene.fog = new THREE.Fog(0x11101a, 20, 55);
+  scene = new THREE.Scene(); scene.background = new THREE.Color(0xeceae4); scene.fog = new THREE.Fog(0xeceae4, 24, 60);
   camera = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
   renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -290,22 +372,56 @@ function init3D() {
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
   };
   resize(); addEventListener('resize', resize);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  // Pale large-tile floor with a subtle grout grid
+  const tileC = document.createElement('canvas'); tileC.width = tileC.height = 256;
+  const tx = tileC.getContext('2d');
+  tx.fillStyle = '#efece6'; tx.fillRect(0, 0, 256, 256);
+  tx.strokeStyle = '#d8d4cc'; tx.lineWidth = 3; tx.strokeRect(0, 0, 256, 256);
+  const tileTex = new THREE.CanvasTexture(tileC);
+  tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping; tileTex.repeat.set(22, 11);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(44, 22),
-    new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 0.25, metalness: 0.15 }));
+    new THREE.MeshStandardMaterial({ map: tileTex, roughness: 0.4 }));
   floor.rotation.x = -Math.PI / 2; scene.add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xefe8dc, roughness: 0.9 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf2f0ec, roughness: 0.9 });
   const mkWall = (w, h, x, y, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat); m.position.set(x, y, z); m.rotation.y = ry; scene.add(m); };
   mkWall(44, 6, 0, 3, -10, 0); mkWall(44, 6, 0, 3, 10, Math.PI);
   mkWall(22, 6, -22, 3, 0, Math.PI / 2); mkWall(22, 6, 22, 3, 0, -Math.PI / 2);
-  // Marble pillars + warm lights
-  for (let x = -18; x <= 18; x += 6) {
-    [-9, 9].forEach(z => {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(0.7, 6, 0.7), new THREE.MeshStandardMaterial({ color: 0xcfc4b0 }));
-      p.position.set(x, 3, z); scene.add(p);
-    });
-    const light = new THREE.PointLight(0xffe9a8, 0.6, 18); light.position.set(x, 5, 0); scene.add(light);
-  }
+  // Dark flat ceiling + black track-light bars
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(44, 22),
+    new THREE.MeshStandardMaterial({ color: 0x111114, roughness: 0.9 }));
+  ceil.rotation.x = Math.PI / 2; ceil.position.y = 6; scene.add(ceil);
+  const trackMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.5 });
+  [-5, 0, 5].forEach(z => {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(30, 0.08, 0.15), trackMat);
+    bar.position.set(0, 5.9, z); scene.add(bar);
+  });
+  // Classical entrance at the south end: white-stone columns, steps, wooden double doors
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0xf5f3ee, roughness: 0.8 });
+  [-9, -3, 3, 9].forEach(x => {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 5.4, 16), stoneMat);
+    col.position.set(x, 2.7, 8.2); scene.add(col);
+  });
+  [0.12, 0.24, 0.36].forEach((h, i) => {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(7, h, 0.6), stoneMat);
+    step.position.set(0, h / 2, 9.2 - i * 0.3); scene.add(step);
+  });
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.7 });
+  [-0.68, 0.68].forEach(x => {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.3, 3.2, 0.15), doorMat);
+    door.position.set(x, 1.6, 9.9); scene.add(door);
+  });
+  const signC = document.createElement('canvas'); signC.width = 1024; signC.height = 128;
+  const sx2 = signC.getContext('2d');
+  sx2.fillStyle = '#f5f3ee'; sx2.fillRect(0, 0, 1024, 128);
+  sx2.fillStyle = '#222'; sx2.font = 'bold 64px serif'; sx2.textAlign = 'center'; sx2.fillText('Our Museum', 512, 84);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.75),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signC) }));
+  sign.position.set(0, 4.4, 9.85); sign.rotation.y = Math.PI; scene.add(sign);
+  // Soft neutral lights
+  [-12, 0, 12].forEach(x => {
+    const light = new THREE.PointLight(0xffffff, 0.5, 20); light.position.set(x, 5, 0); scene.add(light);
+  });
   buildGallery();
   // Drag to look
   let dragging = false, lx = 0, ly = 0;
@@ -380,6 +496,11 @@ function animate() {
     if (d < 0.2) targetWalk = null; else { player.x += dx / d * speed; player.z += dz / d * speed; }
   }
   player.x = Math.max(-21, Math.min(21, player.x)); player.z = Math.max(-9, Math.min(9, player.z));
+  if (playerMesh) {
+    playerMesh.position.set(player.x, 0, player.z);
+    playerMesh.rotation.y = Math.atan2(fx, fz);
+    playerMesh.visible = !firstPerson && !sitting;
+  }
   if (sitting) {
     camera.position.set(player.x, 1.1, player.z);
     camera.lookAt(player.x + fx, 1.4, player.z + fz);

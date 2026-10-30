@@ -14,6 +14,19 @@ python -m http.server 8080
 
 ## What is premium here
 
+- **Giftvera "Our Museum" style (restyled 2026-10-30)** — bright white-box
+  galleries, pale tiled floors, a dark ceiling with black track lights,
+  and a classical white-stone entrance with columns, steps, wooden double
+  doors and an "Our Museum" sign. Photos hang in a single row at eye level
+  in thin black frames with a white mat; the first photo stands large on
+  a tall freestanding black wall on a white platform, with the dedication
+  plaque on a white plinth in front of it. A film screen with a low bench
+  sits on the east wall.
+- **Your character** — a simple doll-like third-person avatar that walks
+  the hall with your name above it. Customise skin tone, hair style and
+  colour, top and trousers in the left panel; your partner appears nearby
+  with their name above them too.
+
 - **Private passcode lock** — set on first open, on this device only.
   This is a device lock, not a server account. Keep the link private.
 - **Your names, everywhere** — entrance, centerpiece plaque, cinema screen.
